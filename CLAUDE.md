@@ -45,6 +45,39 @@ Ele reage ao que vê com atraso, então a live principal precisa ficar **atrás*
 - Fase final (planejada): página estúdio envia ao servidor (WebSocket/HTTP) a tabela de correspondência em tempo
   real, eliminando o L fixo e a necessidade de novo link a cada live.
 
+### Por que não dá para "ler os pixels" das duas lives no navegador
+Ideia cogitada: colocar um trecho (ex. 100x100 px) igual ao da live alvo na live do comentarista e o
+cliente comparar os pixels das duas para detectar mudanças e sincronizar sozinho. **Não é possível a
+partir do navegador**: os dois embeds do YouTube são iframes de outra origem (youtube.com), e o modelo de
+segurança do navegador proíbe qualquer leitura de pixels (canvas/`getImageData`) ou de amostras de áudio
+de conteúdo cross-origin ("canvas tainting"). Isso vale tanto para a live alvo quanto para a própria live
+do comentarista, mesmo sendo o próprio conteúdo dele, porque a restrição é por origem do iframe, não por
+quem é dono do conteúdo. Não existe parâmetro do player ou marcador visual que contorne isso.
+
+O que É viável, mas exige um serviço no servidor (fora do navegador do espectador), pois aí não há iframe:
+baixar trechos curtos dos dois streams públicos (pela URL real de HLS/DASH, não pelo embed) e comparar
+por correlação cruzada de áudio (mais robusto, ex. fingerprint tipo Shazam) ou por cenas de vídeo, achando
+o deslocamento automaticamente e reenviando aos espectadores. Isso é, na prática, uma versão automática da
+"fase final" acima (o L deixa de ser fixo e se autoajusta), mas é um serviço à parte para construir e
+validar - não uma opção rápida.
+
+### Calibração manual: método recomendado
+`btnMark` já lê a posição das duas lives no instante do clique (via `edge`), então **não é preciso pausar
+a live principal nem esperar ver algo refletido na própria live**: o método mais preciso é deixar as duas
+tocando normalmente e clicar em "Marcar sincronia" no instante exato em que a mudança reconhecível
+acontece na tela. Pausar e esperar o próprio gesto aparecer de volta soma dois trajetos de latência do
+YouTube (o da live alvo e o da própria live) ao erro de calibração, além do tempo de reação humana; o
+clique direto evita isso. Essa mudança foi refletida no texto de ajuda do próprio estúdio.
+
+### Limitação conhecida: deriva ao longo da transmissão
+O `L` é calculado uma vez e fica fixo no link. Ele deve se manter válido enquanto as duas transmissões
+seguem sem sobressaltos, mas um anúncio inserido, uma reconexão ou uma falha momentânea em qualquer um dos
+dois streams pode deslocar a relação. Os botões &#9664;1s/1s&#9654; corrigem isso, mas só na tela de quem
+clicou; não há hoje um jeito de reenviar a correção para espectadores que já abriram o link (isso é exatamente
+o que o servidor de sincronia da "fase final" resolveria). Enquanto isso não existe, vale medir a deriva real
+em uma live de 20-30 min com o `proto.html` (item pendente no roadmap) para saber se isso é um problema prático
+ou não antes de investir na automação.
+
 ### Limitações conhecidas
 - Embed desativado pelo dono da live -> não funciona (erros 101/150).
 - DVR desligado na live principal -> não dá para atrasá-la; sincronia impossível.
