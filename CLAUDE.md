@@ -62,11 +62,36 @@ Ele reage ao que vê com atraso, então a live principal precisa ficar **atrás*
 ```
 CLAUDE.md                     este arquivo
 prototype/duadlive-proto.html protótipo de teste (arquivo único, sem dependências além da API do YouTube)
+deploy/Caddyfile.duad         bloco do Caddy para duad.live (importado pelo Caddyfile do veracibot)
 ```
 
 ## Como rodar o protótipo
 Servir por HTTP na pasta `prototype/`, por exemplo `python -m http.server 8000`, e abrir
 `http://localhost:8000/duadlive-proto.html`. Procedimento de teste está descrito na própria página.
+
+## Implantação no servidor Windows
+Situação do servidor (levantada em 2026-09-28):
+- Já existe o **Caddy 2.11.4** rodando como serviço nssm `veracibot-caddy` (conta LocalSystem), ouvindo em 80/443.
+  Ele atende o site `veraci.bot` (outro projeto), que é um app Python em `127.0.0.1:8000`.
+- O Caddyfile em uso fica **no repo do veracibot**: `C:\Git\veracibot\deploy\windows\Caddyfile`
+  (serviço: `run --config` esse arquivo; API admin em `127.0.0.1:2019`).
+- **Não instalar um segundo Caddy** e não ocupar 80/443. O duad.live entra como mais um domínio no Caddy existente.
+
+Como o duad.live é ligado:
+1. O bloco do domínio fica **neste repo**, em `deploy/Caddyfile.duad` (versionado aqui).
+2. No Caddyfile do veracibot acrescenta-se **apenas uma linha** (commitar lá para evitar conflito em pulls):
+   `import C:/Git/duadlive/deploy/Caddyfile.duad`
+3. Clonar este repo no servidor em `C:\Git\duadlive` (se for outro caminho, ajustar `root` no `Caddyfile.duad`).
+4. DNS: registros A de `duad.live` e `www.duad.live` para o IP do servidor (o Caddy emite o HTTPS sozinho quando o DNS resolver).
+5. Validar e recarregar sem derrubar o veraci.bot (rodar na pasta do Caddyfile do veracibot):
+   `caddy validate --config C:\Git\veracibot\deploy\windows\Caddyfile --adapter caddyfile`
+   `caddy reload   --config C:\Git\veracibot\deploy\windows\Caddyfile --adapter caddyfile`
+   Fazer antes uma cópia de segurança do Caddyfile do veracibot.
+6. Atualizar o site: `git pull` no servidor (o Caddy serve a pasta direto; sem build e sem reiniciar).
+
+Quando existir backend (sincronia em tempo real, login): rodar como novo serviço nssm em outra porta local
+(ex.: `127.0.0.1:8001`, `8000` é do veracibot) e acrescentar `reverse_proxy /api/* 127.0.0.1:8001` no bloco do duad.live.
+O Caddy repassa WebSocket sem configuração extra.
 
 ## Resultados dos testes
 _(ainda não realizados; preencher com o relatório copiado da página)_
