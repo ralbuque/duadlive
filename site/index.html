@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duad Live</title>
+<style>
+  :root { --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --txt:#e6e8ee; --dim:#8b93a5; --acc:#ff4d5e; --ok:#3ecf8e; --warn:#ffb454; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--txt); font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif; }
+  a { color:var(--acc); }
+  #app { min-height:100vh; display:flex; flex-direction:column; }
+  #app.watch { height:100vh; }
+
+  /* Barra superior */
+  #bar { display:flex; gap:10px 14px; align-items:center; flex-wrap:wrap; padding:6px 12px; border-bottom:1px solid var(--line); background:var(--panel); }
+  #bar h1 { font-size:15px; margin:0; white-space:nowrap; }
+  #bar h1 b { color:var(--acc); }
+  #barTitle { font-weight:600; max-width:32ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #bar .sp { flex:1; }
+  #bar label { font-size:12px; color:var(--dim); display:flex; align-items:center; gap:5px; white-space:nowrap; }
+  #bar input[type=range] { width:80px; }
+  button, select { padding:5px 10px; background:var(--bg); border:1px solid var(--line); color:var(--txt); border-radius:6px; cursor:pointer; font:inherit; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  button.ok { background:var(--ok); border-color:var(--ok); color:#06210f; }
+  #pill { font-size:12px; padding:3px 9px; border-radius:99px; border:1px solid var(--line); white-space:nowrap; }
+  #pill.ok { color:var(--ok); border-color:var(--ok); }
+  #pill.warn { color:var(--warn); border-color:var(--warn); }
+  #pill.bad { color:var(--acc); border-color:var(--acc); }
+
+  /* Estúdio (criação do link) */
+  #studio { padding:10px 12px; border-bottom:1px solid var(--line); display:grid; gap:8px; }
+  #studio .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  #studio input[type=text] { flex:1; min-width:200px; padding:7px 9px; background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:6px; font:inherit; }
+  .hint { color:var(--dim); font-size:12px; margin:0; }
+
+  /* Palco */
+  #stage { flex:1; min-height:0; position:relative; background:#000; }
+  .slot { position:relative; background:#111; }
+  .slot iframe, .chatbox iframe { width:100%; height:100%; border:0; display:block; }
+  .chatbox { position:relative; background:#0b0d11; }
+  #chatHint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:16px; color:var(--dim); font-size:12px; }
+
+  /* Desktop: 2/3 principal + 1/3 (minha live e comentários) */
+  .split #stage { display:grid; grid-template-columns:2fr minmax(320px,1fr); min-height:420px; }
+  .split.chat-side #stage { grid-template-columns:2fr minmax(320px,1fr) 340px; }
+  #slotMain { min-width:0; min-height:0; }
+  #hostPanel { display:flex; flex-direction:column; min-width:0; min-height:0; background:#0b0d11; }
+  #slotHost { flex:none; width:100%; aspect-ratio:16/9; min-height:200px; }
+  #chatUnder { flex:1; min-height:0; }
+  #chatSide { display:none; min-height:0; }
+  .chat-side #chatUnder, .chat-off #chatUnder { display:none; }
+  .split.chat-side #chatSide { display:block; }
+
+  /* Desktop: principal em tela cheia + painel no canto inferior esquerdo (20% x 60%) */
+  .pip #stage { min-height:520px; }
+  .pip #slotMain { position:absolute; inset:0; }
+  .pip #hostPanel { position:absolute; left:10px; bottom:10px; z-index:4; width:clamp(360px, var(--pipw,20%), 760px); height:60%; max-height:calc(100% - 20px); border:2px solid var(--acc); border-radius:8px; overflow:hidden; }
+  .pip.chat-side #hostPanel, .pip.chat-off #hostPanel { height:auto; }
+  .pip #chatSide { position:absolute; right:0; top:0; bottom:0; width:340px; z-index:4; }
+  .pip.chat-side #chatSide { display:block; }
+
+  /* Tela de entrada (exige um clique por causa do autoplay) */
+  #overlay { position:absolute; inset:0; z-index:20; background:radial-gradient(circle at 50% 40%, #1c2030, #0a0c10); display:flex; flex-direction:column; gap:14px; align-items:center; justify-content:center; text-align:center; padding:20px; }
+  #overlay h2 { margin:0; font-size:24px; max-width:24ch; }
+  #overlay button { font-size:18px; padding:12px 28px; }
+
+  #toast { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); background:#000c; border:1px solid var(--line); padding:8px 14px; border-radius:8px; z-index:50; max-width:90vw; }
+
+  /* Celular: uma live sobre a outra, comentários embaixo */
+  @media (max-width:760px) {
+    #app.watch { height:auto; }
+    #stage, .split #stage, .split.chat-side #stage, .pip #stage { display:block; flex:none; min-height:0; }
+    .split #slotMain, .pip #slotMain { position:relative; inset:auto; width:100%; aspect-ratio:16/9; }
+    .split #hostPanel, .pip #hostPanel { position:relative; left:auto; bottom:auto; width:100%; height:auto; max-height:none; border:0; border-radius:0; }
+    #chatUnder, .chat-side #chatUnder { display:block; flex:none; height:60vh; }
+    .chat-off #chatUnder { display:none; }
+    #chatSide, .split.chat-side #chatSide, .pip.chat-side #chatSide { display:none; }
+    #layoutWrap, #pipSizeWrap { display:none; }
+    #overlay { position:fixed; }
+  }
+</style>
+</head>
+<body>
+<div id="app" class="split chat-under watch">
+  <header id="bar">
+    <h1><b>duad</b>.live</h1>
+    <span id="barTitle"></span>
+    <span class="sp"></span>
+    <span id="layoutWrap"><label>Layout
+      <select id="layoutSel"><option value="split">1/3 + 2/3</option><option value="pip">Painel no canto</option></select></label></span>
+    <label id="pipSizeWrap" hidden>Painel <input type="range" id="pipSize" min="15" max="40" value="20"></label>
+    <label>Comentários
+      <select id="chatSel"><option value="under">Abaixo da minha live</option><option value="side">Painel separado</option><option value="off">Ocultos</option></select></label>
+    <label>Voz <input type="range" id="volHost" min="0" max="100" value="100"></label>
+    <label>Principal <input type="range" id="volMain" min="0" max="100" value="50"></label>
+    <span><button id="btnBack" title="Atrasar a principal em 1 s">&#9664; 1s</button> <button id="btnFwd" title="Adiantar a principal em 1 s">1s &#9654;</button></span>
+    <span id="pill">aguardando</span>
+    <a id="editLink" href="#" hidden>Configurar</a>
+  </header>
+
+  <section id="studio" hidden>
+    <div class="row"><input type="text" id="inTitle" placeholder="Título da sua Duad Live (opcional)"></div>
+    <div class="row">
+      <input type="text" id="inHost" placeholder="Minha live (comentários) - URL ou ID">
+      <input type="text" id="inMain" placeholder="Live principal (a comentada) - URL ou ID">
+      <button class="primary" id="btnLoad">Carregar</button>
+    </div>
+    <div class="row">
+      <button class="ok" id="btnMark">Marcar sincronia agora</button>
+      <span>Atraso da principal em relação à minha: <b id="lagVal">-</b></span>
+    </div>
+    <div class="row">
+      <input type="text" id="linkOut" readonly placeholder="O link aparece aqui depois de marcar a sincronia">
+      <button id="btnCopy">Copiar link</button>
+      <a id="linkOpen" target="_blank" hidden>Abrir</a>
+    </div>
+    <p class="hint">1) Cole as duas URLs e clique em Carregar. 2) Leve a live principal, pela barra do player dela, ao mesmo momento a que você reage na sua live. 3) Clique em Marcar sincronia. 4) Copie o link e envie ao público. A sincronia vale para uma transmissão sua; em uma nova live, gere um novo link.</p>
+  </section>
+
+  <main id="stage">
+    <div id="slotMain" class="slot"><div id="playerMain"></div></div>
+    <div id="hostPanel">
+      <div id="slotHost" class="slot"><div id="playerHost"></div></div>
+      <div id="chatUnder" class="chatbox"><div id="chatHint">Os comentários da live aparecem aqui.</div></div>
+    </div>
+    <div id="chatSide" class="chatbox"></div>
+    <div id="overlay" hidden>
+      <h2 id="ovTitle">Duad Live</h2>
+      <p class="hint">Duas transmissões ao vivo lado a lado, sincronizadas.</p>
+      <button class="primary" id="btnEnter">Entrar</button>
+    </div>
+  </main>
+</div>
+<div id="toast" hidden></div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const qs = new URLSearchParams(location.search);
+
+function parseId(v){
+  v = (v||'').trim();
+  if (/^[\w-]{11}$/.test(v)) return v;
+  try {
+    const u = new URL(v);
+    if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('/')[0];
+    if (u.searchParams.get('v')) return u.searchParams.get('v');
+    const m = u.pathname.match(/\/(live|embed|shorts)\/([\w-]{11})/);
+    if (m) return m[2];
+  } catch(e){}
+  return null;
+}
+const store = {
+  get(k, d){ try { const v = localStorage.getItem('duad.'+k); return v==null ? d : v; } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem('duad.'+k, v); } catch(e){} }
+};
+
+/* ---------- configuração vinda do link ---------- */
+const lq = parseFloat(qs.get('l'));
+const cfg = { h:parseId(qs.get('h')), m:parseId(qs.get('m')), l:isNaN(lq)?null:lq, t:(qs.get('t')||'').slice(0,120) };
+const STUDIO = !(cfg.h && cfg.m) || qs.get('studio')==='1';
+
+/* ---------- estado ---------- */
+const P = { host:null, main:null };
+const ST = { host:-1, main:-1 };
+let ids = { host:cfg.h, main:cfg.m };
+let L = cfg.l;            // atraso: (borda da principal) - (borda da minha), em segundos
+let adj = 0;              // ajuste local (botões +-1s)
+let cool = 0;             // instante até o qual não se corrige de novo
+let layout = store.get('layout', 'split');
+let chatMode = store.get('chat', 'under');
+let pipw = +store.get('pipw', 20);
+const vol = { host:+store.get('volHost', 100), main:+store.get('volMain', 50) };
+const TOL = 2.0;
+
+function toast(msg, ms=4500){
+  const t = $('toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(()=> t.hidden = true, ms);
+}
+
+/* ---------- interface ---------- */
+const chatFrame = document.createElement('iframe');
+chatFrame.title = 'Comentários da live';
+
+function placeChat(){
+  const id = ids.host;
+  const mobile = matchMedia('(max-width:760px)').matches;
+  if (chatMode==='off' || !id){
+    if (chatFrame.parentNode) chatFrame.remove();
+    chatFrame.removeAttribute('src'); delete chatFrame.dataset.src;
+    $('chatHint').hidden = false;
+    return;
+  }
+  const target = (chatMode==='side' && !mobile) ? $('chatSide') : $('chatUnder');
+  if (chatFrame.parentNode !== target) target.appendChild(chatFrame);
+  $('chatHint').hidden = true;
+  const src = 'https://www.youtube.com/live_chat?v='+id+'&embed_domain='+location.hostname+'&dark_theme=1';
+  if (chatFrame.dataset.src !== src){ chatFrame.dataset.src = src; chatFrame.src = src; }
+}
+function applyUi(){
+  $('app').className = [layout, 'chat-'+chatMode, STUDIO?'studio':'watch'].join(' ');
+  $('app').style.setProperty('--pipw', pipw+'%');
+  $('layoutSel').value = layout; $('chatSel').value = chatMode; $('pipSize').value = pipw;
+  $('pipSizeWrap').hidden = layout !== 'pip';
+  placeChat();
+}
+$('layoutSel').onchange = e => { layout = e.target.value; store.set('layout', layout); applyUi(); };
+$('chatSel').onchange = e => { chatMode = e.target.value; store.set('chat', chatMode); applyUi(); };
+$('pipSize').oninput = e => { pipw = +e.target.value; store.set('pipw', pipw); applyUi(); };
+matchMedia('(max-width:760px)').addEventListener('change', placeChat);
+
+$('volHost').value = vol.host; $('volMain').value = vol.main;
+$('volHost').oninput = e => { vol.host = +e.target.value; store.set('volHost', vol.host); if (P.host){ P.host.unMute(); P.host.setVolume(vol.host); } };
+$('volMain').oninput = e => { vol.main = +e.target.value; store.set('volMain', vol.main); if (P.main){ P.main.unMute(); P.main.setVolume(vol.main); } };
+
+/* ---------- YouTube IFrame API ---------- */
+let apiReady = false; const apiWaiters = [];
+window.onYouTubeIframeAPIReady = () => { apiReady = true; apiWaiters.splice(0).forEach(f => f()); };
+function whenApi(f){ apiReady ? f() : apiWaiters.push(f); }
+{ const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s); }
+
+function makePlayer(key, elId, vid){
+  const vars = { playsinline:1, rel:0, autoplay:1, modestbranding:1, mute: STUDIO ? 1 : 0 };
+  if (location.protocol.startsWith('http')) vars.origin = location.origin;
+  P[key] = new YT.Player(elId, {
+    videoId: vid, width:'100%', height:'100%', playerVars: vars,
+    events: {
+      onReady: e => { e.target.setVolume(vol[key]); e.target.playVideo(); },
+      onStateChange: e => { ST[key] = e.data; },
+      onError: e => {
+        const m = {2:'ID de vídeo inválido',5:'erro no player',100:'vídeo indisponível ou privado',
+                   101:'o dono desativou a incorporação desta live',150:'o dono desativou a incorporação desta live',
+                   153:'a página precisa ser aberta por http(s), não como arquivo'}[e.data] || ('erro '+e.data);
+        toast((key==='host' ? 'Minha live: ' : 'Live principal: ') + m, 9000);
+      }
+    }
+  });
+}
+function makePlayers(){
+  if (P.host){ P.host.loadVideoById(ids.host); P.main.loadVideoById(ids.main); return; }
+  makePlayer('host', 'playerHost', ids.host);
+  makePlayer('main', 'playerMain', ids.main);
+}
+
+/* ---------- sincronia ----------
+   Invariante: a principal deve estar (edge_host + L) segundos atrás da sua própria borda ao vivo,
+   onde edge = getDuration() - getCurrentTime() = quanto o player está atrás do "agora" da transmissão.
+   Isso não depende da origem da linha do tempo de cada espectador. */
+const pos  = p => { try { return p.getCurrentTime(); } catch(e){ return NaN; } };
+const dur  = p => { try { return p.getDuration(); } catch(e){ return NaN; } };
+const edge = p => dur(p) - pos(p);
+const isLive = p => { try { return !!p.getVideoData().isLive; } catch(e){ return false; } };
+
+function setStatus(kind, extra){
+  const pill = $('pill');
+  const map = {
+    idle:   [STUDIO ? 'marque a sincronia' : 'sem sincronia no link', 'warn'],
+    wait:   ['carregando…', 'warn'],
+    ok:     ['sincronizada'+(extra!=null ? ' (±'+Math.abs(extra).toFixed(1)+' s)' : ''), 'ok'],
+    corr:   ['ajustando…', 'warn'],
+    notlive:['requer duas lives ao vivo', 'bad'],
+    nodvr:  ['principal sem histórico (DVR)', 'bad']
+  };
+  pill.textContent = map[kind][0]; pill.className = map[kind][1];
+}
+
+function tick(){
+  if (!P.host || !P.main) return setStatus('idle');
+  if (L == null) return setStatus('idle');
+  if (ST.host !== 1 || ST.main !== 1) return setStatus('wait');
+  if (!isLive(P.host) || !isLive(P.main)) return setStatus('notlive');
+  if (performance.now() < cool) return;
+  const err = edge(P.main) - (edge(P.host) + L + adj);   // >0: principal está atrás demais
+  if (Math.abs(err) > TOL){
+    const target = pos(P.main) + err;
+    if (target < 0){ cool = performance.now() + 8000; return setStatus('nodvr'); }
+    P.main.seekTo(Math.min(target, dur(P.main) - 1), true);
+    cool = performance.now() + 5000;
+    return setStatus('corr');
+  }
+  setStatus('ok', err);
+}
+setInterval(tick, 1000);
+
+function nudge(x){ adj += x; cool = 0; renderLag(); renderLink(); toast('Ajuste: '+(adj>0?'+':'')+adj+' s', 1500); }
+$('btnBack').onclick = () => nudge(+1);
+$('btnFwd').onclick  = () => nudge(-1);
+
+/* ---------- estúdio: marcar sincronia e gerar link ---------- */
+function renderLag(){ $('lagVal').textContent = L==null ? '-' : (L+adj).toFixed(1)+' s'; }
+function renderLink(){
+  const out = $('linkOut'), open = $('linkOpen');
+  if (!(ids.host && ids.main && L!=null)){ out.value = ''; open.hidden = true; return; }
+  const p = new URLSearchParams({ h:ids.host, m:ids.main, l:(L+adj).toFixed(1) });
+  const t = $('inTitle').value.trim(); if (t) p.set('t', t);
+  const url = location.href.split('?')[0].split('#')[0] + '?' + p.toString();
+  out.value = url; open.href = url; open.hidden = false;
+}
+$('inTitle').oninput = renderLink;
+$('btnLoad').onclick = () => {
+  const h = parseId($('inHost').value), m = parseId($('inMain').value);
+  if (!h || !m){ toast('Informe as duas URLs ou IDs válidos.'); return; }
+  ids = { host:h, main:m }; L = null; adj = 0; renderLag(); renderLink(); placeChat();
+  whenApi(makePlayers);
+};
+$('btnMark').onclick = () => {
+  if (!P.host || !P.main || ST.host!==1 || ST.main!==1){ toast('Carregue as duas lives e espere os dois players tocarem.'); return; }
+  if (!isLive(P.host) || !isLive(P.main)){ toast('As duas transmissões precisam estar ao vivo.'); return; }
+  L = edge(P.main) - edge(P.host); adj = 0; cool = performance.now() + 3000;
+  renderLag(); renderLink(); setStatus('ok', 0);
+  toast('Sincronia marcada. Copie o link abaixo.');
+};
+$('btnCopy').onclick = async () => {
+  const v = $('linkOut').value; if (!v){ toast('Marque a sincronia primeiro.'); return; }
+  try { await navigator.clipboard.writeText(v); } catch(e){ $('linkOut').select(); document.execCommand('copy'); }
+  toast('Link copiado.', 1500);
+};
+
+/* ---------- inicialização ---------- */
+applyUi();
+if (STUDIO){
+  $('studio').hidden = false;
+  $('barTitle').textContent = 'Estúdio - criar link';
+  if (cfg.h) $('inHost').value = 'https://www.youtube.com/watch?v=' + cfg.h;
+  if (cfg.m) $('inMain').value = 'https://www.youtube.com/watch?v=' + cfg.m;
+  $('inTitle').value = cfg.t;
+  renderLag(); renderLink();
+} else {
+  document.title = (cfg.t ? cfg.t + ' - ' : '') + 'Duad Live';
+  $('barTitle').textContent = cfg.t;
+  $('ovTitle').textContent = cfg.t || 'Duad Live';
+  $('overlay').hidden = false;
+  $('editLink').hidden = false;
+  $('editLink').href = location.href.split('#')[0] + '&studio=1';
+  if (cfg.l == null) toast('Este link não tem sincronia configurada.', 8000);
+  $('btnEnter').onclick = () => { $('overlay').hidden = true; whenApi(makePlayers); };
+}
+setStatus('idle');
+if (location.protocol === 'file:') toast('Abra por http(s): o YouTube recusa embeds em arquivos locais (erro 153).', 10000);
+</script>
+</body>
+</html>

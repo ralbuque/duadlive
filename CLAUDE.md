@@ -22,16 +22,28 @@ o conteúdo alheio: o espectador é quem abre as duas, cada uma direto do YouTub
 Ele reage ao que vê com atraso, então a live principal precisa ficar **atrás** do "agora"
 (tipicamente 10-40 s) no player do espectador.
 
-## Abordagem técnica (plano)
+## Abordagem técnica
 - Usar a **YouTube IFrame Player API** (`getCurrentTime`, `getDuration`, `seekTo`, `setVolume`,
   `setPlaybackRate`). Nada de captura de vídeo: o embed é cross-origin e não deve ser burlado.
-- Sincronizar por **posição na linha do tempo** (não por relógio de parede), o que independe da
-  latência de cada espectador. Requer que a live principal tenha **DVR ligado** e **embed liberado**.
-- Fase final: página "estúdio" do comentarista envia ao servidor (WebSocket/HTTP) uma tabela
-  "posição na minha live -> posição na live principal". O espectador lê a posição da live do
-  comentarista, consulta a tabela e faz `seekTo` na principal. Laço de correção a cada 1-2 s
-  (seek se erro > ~2 s; ajuste fino por velocidade só se o YouTube aceitar).
+- Requer que a live principal tenha **DVR ligado** e **embed liberado**.
+- **Invariante de sincronia (adotado em `site/index.html`): distância até a borda ao vivo.**
+  Para uma live, `getDuration()` devolve o tempo decorrido desde o início da transmissão (a borda) e
+  `getCurrentTime()` a posição atual, então `edge = getDuration() - getCurrentTime()` é o quanto o player
+  está atrás do "agora". O comentarista marca uma vez `L = edge(principal) - edge(minha)`. Cada espectador
+  então mantém `edge(principal) = edge(minha) + L`, corrigindo com `seekTo` quando o erro passa de 2 s.
+  Isso não depende da origem da linha do tempo de cada espectador nem de janela de DVR deslizante.
+  (O protótipo `site/proto.html` usa a diferença de posições absolutas; a versão por borda é a preferida,
+  mas **ambas ainda precisam ser validadas com lives reais**.)
 - Precisão esperada: 0,5 a 2 s (suficiente para comentário; não é quadro a quadro).
+- **Link por Duad Live (sem backend):** `https://duad.live/?h=<id minha live>&m=<id principal>&l=<L em s>&t=<título>`.
+  Sem `h`/`m` (ou com `&studio=1`) a mesma página abre como **estúdio**: carregar as lives, marcar a sincronia
+  e copiar o link. Como L é específico de uma transmissão, cada nova live do comentarista exige novo link
+  (a fase de servidor automatiza isso).
+- **Comentários:** iframe oficial `https://www.youtube.com/live_chat?v=<id da minha live>&embed_domain=<hostname>`.
+  Para escrever, o espectador precisa estar logado no YouTube (o bloqueio de cookies de terceiros pode
+  atrapalhar); não funciona se o chat da live estiver desativado. Apenas o chat da MINHA live é exibido.
+- Fase final (planejada): página estúdio envia ao servidor (WebSocket/HTTP) a tabela de correspondência em tempo
+  real, eliminando o L fixo e a necessidade de novo link a cada live.
 
 ### Limitações conhecidas
 - Embed desativado pelo dono da live -> não funciona (erros 101/150).
@@ -41,33 +53,40 @@ Ele reage ao que vê com atraso, então a live principal precisa ficar **atrás*
 - Abrir via `file://` causa erro 153: **sempre servir por http(s)**.
 - Não é aconselhamento jurídico; conferir termos de uso do player embutido do YouTube.
 
-## Layouts desejados
-- **Celular:** uma live sobre a outra (principal em cima, comentarista embaixo).
-- **Desktop:** ainda em decisão entre (a) 2/3 principal + 1/3 comentarista, ou
-  (b) principal em tela cheia + painel do comentarista no canto inferior esquerdo (20% largura x 30% altura).
-  O protótipo já tem os dois com um seletor.
+## Layouts (implementados em `site/index.html`, escolha persistida em localStorage)
+- **Celular (<= 760 px):** principal em cima, minha live embaixo, comentários abaixo (rolagem da página).
+- **Desktop "1/3 + 2/3":** principal em 2/3; na coluna de 1/3, minha live (16:9) e os comentários abaixo dela.
+- **Desktop "Painel no canto":** principal em tela cheia; painel no canto inferior esquerdo com **60% da altura**
+  (o original de 30% ficou pequeno) e largura de 20% (mín. 360 px, ajustável 15-40% por controle),
+  contendo minha live no topo e os comentários abaixo.
+- **Comentários:** "abaixo da minha live" (padrão), "painel separado" (coluna/gaveta de 340 px à direita) ou ocultos.
+- O YouTube exige player com no mínimo 200x200 px; o player da minha live nunca fica menor que 200 px de altura.
+- Decisão de layout preferido do dono ainda em aberto; ambos disponíveis.
 
 ## Roadmap
-1. **[FEITO] Protótipo de teste** (`prototype/duadlive-proto.html`): dois players, sincronia por delta
+1. **[FEITO] Banco de testes** (`site/proto.html`, em https://duad.live/proto.html): dois players, sincronia por delta
    marcado manualmente, painel de diagnóstico, testes de seek/velocidade, relatório copiável.
-2. **[PENDENTE] Rodar o protótipo com lives reais** e colher: estabilidade de `getCurrentTime` em lives,
-   precisão/tempo do `seekTo`, se `setPlaybackRate(1.05)` é aceito, deriva em 30 min.
-   Registrar os resultados na seção "Resultados dos testes" abaixo.
-3. Servidor + página de estúdio com tabela de sincronia em tempo real.
-4. Multiusuário: login/senha; cada usuário cadastra sua "duadlive" (título, thumbnail própria,
+2. **[FEITO] Versão com link e comentários** (`site/index.html`): estúdio que gera link, visualizador com
+   os dois layouts, chat da minha live, mobile empilhado, sincronia por borda ao vivo.
+3. **[PENDENTE] Validar a sincronia com lives reais** (estabilidade de `getCurrentTime`/`getDuration` em lives,
+   precisão do `seekTo`, se `setPlaybackRate(1.05)` é aceito, deriva em 30 min) e registrar em "Resultados dos testes".
+4. Servidor + página de estúdio com tabela de sincronia em tempo real (elimina o link novo a cada live).
+5. Multiusuário: login/senha; cada usuário cadastra sua "duadlive" (título, thumbnail própria,
    as duas lives) e recebe um **link próprio**. Ideia: produto útil para outros criadores.
-5. Produção: HTTPS, domínio duad.live, hospedagem no servidor Windows (Node ou ASP.NET/SignalR).
+6. Produção: HTTPS, domínio duad.live, hospedagem no servidor Windows (Node ou ASP.NET/SignalR).
 
 ## Estrutura do repositório
 ```
-CLAUDE.md                     este arquivo
-prototype/duadlive-proto.html protótipo de teste (arquivo único, sem dependências além da API do YouTube)
-deploy/Caddyfile.duad         bloco do Caddy para duad.live (importado pelo Caddyfile do veracibot)
+CLAUDE.md          este arquivo
+site/index.html    estúdio (sem parâmetros) e visualizador (com ?h=&m=&l=&t=); é o produto
+site/proto.html    banco de testes de sincronização com diagnóstico e relatório
+deploy/Caddyfile.duad  bloco do Caddy para duad.live (importado pelo Caddyfile do veracibot)
 ```
 
-## Como rodar o protótipo
-Servir por HTTP na pasta `prototype/`, por exemplo `python -m http.server 8000`, e abrir
-`http://localhost:8000/duadlive-proto.html`. Procedimento de teste está descrito na própria página.
+## Como rodar localmente
+Servir a pasta `site/` por HTTP, por exemplo `python -m http.server 8000` dentro dela, e abrir
+`http://localhost:8000/` (nunca por `file://`). Em produção: https://duad.live/ (estúdio),
+https://duad.live/proto.html (banco de testes).
 
 ## Implantação no servidor Windows
 Situação do servidor (levantada em 2026-09-28):
@@ -81,13 +100,14 @@ Como o duad.live é ligado:
 1. O bloco do domínio fica **neste repo**, em `deploy/Caddyfile.duad` (versionado aqui).
 2. No Caddyfile do veracibot acrescenta-se **apenas uma linha** (commitar lá para evitar conflito em pulls):
    `import C:/Git/duadlive/deploy/Caddyfile.duad`
-3. Clonar este repo no servidor em `C:\Git\duadlive` (se for outro caminho, ajustar `root` no `Caddyfile.duad`).
+3. Clonar este repo no servidor em `C:\Git\duadlive` (se for outro caminho, ajustar `root` no `Caddyfile.duad`, que aponta para a subpasta `site`).
 4. DNS: registros A de `duad.live` e `www.duad.live` para o IP do servidor (o Caddy emite o HTTPS sozinho quando o DNS resolver).
 5. Validar e recarregar sem derrubar o veraci.bot (rodar na pasta do Caddyfile do veracibot):
    `caddy validate --config C:\Git\veracibot\deploy\windows\Caddyfile --adapter caddyfile`
    `caddy reload   --config C:\Git\veracibot\deploy\windows\Caddyfile --adapter caddyfile`
    Fazer antes uma cópia de segurança do Caddyfile do veracibot.
 6. Atualizar o site: `git pull` no servidor (o Caddy serve a pasta direto; sem build e sem reiniciar).
+   Se `deploy/Caddyfile.duad` mudou, rodar também o `caddy validate` e o `caddy reload` do passo 5.
 
 Quando existir backend (sincronia em tempo real, login): rodar como novo serviço nssm em outra porta local
 (ex.: `127.0.0.1:8001`, `8000` é do veracibot) e acrescentar `reverse_proxy /api/* 127.0.0.1:8001` no bloco do duad.live.
