@@ -113,6 +113,11 @@
       <button class="ok" id="btnMark">Marcar sincronia agora</button>
       <span>Atraso da principal em relação à minha: <b id="lagVal">-</b></span>
     </div>
+    <div class="row" id="diagRow" style="font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums">
+      <span>Minha: <span id="diagHost">-</span></span>
+      <span>&middot;</span>
+      <span>Principal: <span id="diagMain">-</span></span>
+    </div>
     <div class="row">
       <input type="text" id="linkOut" readonly placeholder="O link aparece aqui depois de marcar a sincronia">
       <button id="btnCopy">Copiar link</button>
@@ -287,6 +292,21 @@ function tick(){
 }
 setInterval(tick, 1000);
 
+const STNAMES = {'-1':'não iniciado', 0:'terminado', 1:'tocando', 2:'pausado', 3:'buffering', 5:'na fila'};
+function diagLine(key){
+  const p = P[key];
+  if (!p || !p.getCurrentTime) return '-';
+  const st = STNAMES[ST[key]] ?? ST[key];
+  const c = pos(p), d = dur(p), e = edge(p);
+  const fmt = x => (x==null || isNaN(x)) ? '-' : x.toFixed(1);
+  return st + ' · pos ' + fmt(c) + 's · dur ' + fmt(d) + 's · atraso ' + fmt(e) + 's';
+}
+setInterval(() => {
+  if (!STUDIO) return;
+  $('diagHost').textContent = diagLine('host');
+  $('diagMain').textContent = diagLine('main');
+}, 500);
+
 function nudge(x){ adj += x; cool = 0; renderLag(); renderLink(); toast('Ajuste: '+(adj>0?'+':'')+adj+' s', 1500); }
 $('btnBack').onclick = () => nudge(+1);
 $('btnFwd').onclick  = () => nudge(-1);
@@ -311,9 +331,15 @@ $('btnLoad').onclick = () => {
 $('btnMark').onclick = () => {
   if (!P.host || !P.main || ST.host!==1 || ST.main!==1){ toast('Carregue as duas lives e espere os dois players tocarem.'); return; }
   if (!isLive(P.host) || !isLive(P.main)){ toast('As duas transmissões precisam estar ao vivo.'); return; }
-  L = edge(P.main) - edge(P.host); adj = 0; cool = performance.now() + 3000;
+  const eh = edge(P.host), em = edge(P.main);
+  L = em - eh; adj = 0; cool = performance.now() + 3000;
   renderLag(); renderLink(); setStatus('ok', 0);
-  toast('Sincronia marcada. Copie o link abaixo.');
+  if (Math.abs(eh) > 60 || Math.abs(em) > 120){
+    toast('Atraso bruto incomum (minha '+eh.toFixed(1)+'s, principal '+em.toFixed(1)+'s). Se você acabou de clicar em Carregar, '
+        + 'espere uns 10-15s com os dois tocando normalmente e marque de novo - a duração da live pode levar um instante para se estabilizar.', 12000);
+  } else {
+    toast('Sincronia marcada. Copie o link abaixo.');
+  }
 };
 $('btnCopy').onclick = async () => {
   const v = $('linkOut').value; if (!v){ toast('Marque a sincronia primeiro.'); return; }
